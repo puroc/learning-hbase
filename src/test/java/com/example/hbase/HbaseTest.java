@@ -24,7 +24,7 @@ public class HbaseTest {
     public void setUp() throws Exception {
         configuration = HBaseConfiguration.create();
         configuration.set("hbase.zookeeper.property.clientPort", "2181");
-        configuration.set("hbase.zookeeper.quorum", "docker-1,docker-2");
+        configuration.set("hbase.zookeeper.quorum", "docker-1");
     }
 
     @Test
