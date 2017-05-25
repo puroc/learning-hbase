@@ -5,31 +5,41 @@ import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.hbase.HBaseConfiguration;
 import org.apache.hadoop.hbase.HColumnDescriptor;
 import org.apache.hadoop.hbase.HTableDescriptor;
-import org.apache.hadoop.hbase.client.HBaseAdmin;
-import org.apache.hadoop.hbase.client.HTable;
-import org.apache.hadoop.hbase.client.Put;
+import org.apache.hadoop.hbase.KeyValue;
+import org.apache.hadoop.hbase.client.*;
 import org.apache.hadoop.hbase.util.Bytes;
 
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.atomic.AtomicInteger;
 
 /**
  * Created by puroc on 17/5/24.
  */
 public class Main {
 
-    public static final int THREAD_COUNT = 10;
+    //    执行插入操作的线程数
+    public static final int THREAD_COUNT = 5;
 
-    public static final long MSG_COUNT_PER_THREAD = 10000;
+    //    每个插入线程插入的记录数
+    public static final long ROW_COUNT_PER_THREAD = 10000;
+
+    //    一次批量插入操作的消息数
+    public static final int BATCH_INSERT_NUM = 100;
 
     private Configuration configuration;
 
+    //    表名
     private String tableName = "test2";
 
     private String columnFamily = "abc";
 
-    private static int columnNum = 50;
+    //    每条记录的字段数量
+    private static int columnNum = 17280;
+
+    //    查询操作要查询的字段数量
+    public static final int QUERY_NUM = 1440;
 
     private static String[] columns = new String[columnNum];
 
@@ -37,13 +47,16 @@ public class Main {
 
     private HBaseAdmin admin;
 
+    public static final String COLUMN = "column-";
+
+    public static final String VALUE = "value-";
+
     static {
         for (int i = 0; i < columnNum; i++) {
-            columns[i] = "column-" + i;
-            values[i] = "value-" + i;
+            columns[i] = COLUMN + i;
+            values[i] = VALUE + i;
         }
     }
-
 
     private void init() {
         try {
@@ -92,11 +105,11 @@ public class Main {
         put.setWriteToWAL(false);
         for (int i = 0; i < columns.length; i++) {
             put.add(Bytes.toBytes(columnFamily),
-                    Bytes.toBytes(String.valueOf(columns[i])),
+                    Bytes.toBytes(columns[i]),
                     Bytes.toBytes(values[i]));
         }
         list.add(put);
-        if (list.size() % 100 == 0) {
+        if (list.size() % BATCH_INSERT_NUM == 0) {
             table.put(list);
             table.flushCommits();
             list.clear();
@@ -120,10 +133,13 @@ public class Main {
                 table.setWriteBufferSize(24 * 1024 * 1024);
 
                 final List<Put> list = new ArrayList<Put>();
-                for (int i = 0; i < MSG_COUNT_PER_THREAD; i++) {
+                for (int i = 0; i < ROW_COUNT_PER_THREAD; i++) {
                     //                                String rowKey = System.currentTimeMillis() + random.nextInt
                     // (99999) + "";
                     String rowKey = threadName + "-" + i;
+                    if (i % 100 == 0) {
+                        System.out.println("thread "+threadName+" insert "+ i + " row");
+                    }
                     try {
                         insert(table, rowKey, list);
                     } catch (Throwable e) {
@@ -137,7 +153,7 @@ public class Main {
         }
     }
 
-    private void test() throws IOException {
+    private void batchInsert() throws IOException {
         long start = System.currentTimeMillis();
 
         //创建线程
@@ -163,7 +179,33 @@ public class Main {
 
         long stop = System.currentTimeMillis();
 
-        System.out.println("num:" + MSG_COUNT_PER_THREAD * THREAD_COUNT + ",time:" + (stop - start));
+        System.out.println("num:" + ROW_COUNT_PER_THREAD * THREAD_COUNT + ",time:" + (stop - start));
+    }
+
+    private void batchQuery() {
+        long start = System.currentTimeMillis();
+        try {
+            HTable table = new HTable(configuration, Bytes.toBytes(tableName));
+            //查询第一行数据
+            Get get = new Get(Bytes.toBytes("0-100"));
+            for (int i = 0; i < QUERY_NUM; i++) {
+                get.addColumn(Bytes.toBytes(columnFamily), Bytes.toBytes(COLUMN + i)); // 获取指定列族和列修饰符对应的列
+            }
+            Result result = table.get(get);
+            AtomicInteger resultNum = new AtomicInteger(0);
+            for (KeyValue kv : result.list()) {
+//                System.out.println(Bytes.toString(kv.getValueArray()));
+                resultNum.incrementAndGet();
+            }
+            //如果实际查询结果跟要查询的数量不相等,代表查询出现异常
+            if (resultNum.get() != QUERY_NUM) {
+                throw new RuntimeException("resultNum is not equal to queryNum");
+            }
+        } catch (Throwable e) {
+            e.printStackTrace();
+        }
+        long stop = System.currentTimeMillis();
+        System.out.println("queryNum:" + QUERY_NUM + ",time:" + (stop - start));
     }
 
     public static void main(String[] args) throws IOException {
@@ -171,6 +213,7 @@ public class Main {
         main.init();
 //        main.deleteTable();
 //        main.createTable();
-        main.test();
+//        main.batchInsert();
+        main.batchQuery();
     }
 }

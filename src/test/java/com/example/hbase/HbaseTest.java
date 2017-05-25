@@ -21,7 +21,7 @@ public class HbaseTest {
 
     private Configuration configuration;
 
-    private String tableName = "test2";
+    private String tableName = "test1";
 
     private String[] columns = new String[]{"name", "age"};
 
@@ -196,6 +196,7 @@ public class HbaseTest {
         try {
             HTable table = new HTable(configuration, Bytes.toBytes(tableName));
             Get get = new Get(Bytes.toBytes("1"));
+            get.addColumn(Bytes.toBytes(columnFamily), Bytes.toBytes("name")); // 获取指定列族和列修饰符对应的列
             get.addColumn(Bytes.toBytes(columnFamily), Bytes.toBytes("age")); // 获取指定列族和列修饰符对应的列
             Result result = table.get(get);
             for (KeyValue kv : result.list()) {
