@@ -1,7 +1,10 @@
 package com.example.hbase;
 
 import org.apache.hadoop.conf.Configuration;
-import org.apache.hadoop.hbase.*;
+import org.apache.hadoop.hbase.HBaseConfiguration;
+import org.apache.hadoop.hbase.HColumnDescriptor;
+import org.apache.hadoop.hbase.HTableDescriptor;
+import org.apache.hadoop.hbase.KeyValue;
 import org.apache.hadoop.hbase.client.*;
 import org.apache.hadoop.hbase.util.Bytes;
 import org.junit.After;
@@ -18,9 +21,7 @@ public class HbaseTest {
 
     private Configuration configuration;
 
-    private Connection con;
-
-    private String tableName = "test";
+    private String tableName = "test2";
 
     private String[] columns = new String[]{"name", "age"};
 
