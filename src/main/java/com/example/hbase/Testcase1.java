@@ -244,7 +244,7 @@ public class Testcase1 {
             HTable table = new HTable(configuration, Bytes.toBytes(tableName));
 
             //查询第一行数据
-            Get get = new Get(Bytes.toBytes("0-100"));
+            Get get = new Get(Bytes.toBytes("0-1"));
             if (byTimeRange) {
                 get.setTimeRange(get.getTimeRange().getMin(), get.getTimeRange().getMax());
             } else {
