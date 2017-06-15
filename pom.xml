@@ -44,7 +44,7 @@
                     </descriptorRefs>
                     <archive>
                         <manifest>
-                            <mainClass>com.example.hbase.Main</mainClass>
+                            <mainClass>com.example.hbase.Testcase1</mainClass>
                         </manifest>
                     </archive>
                 </configuration>

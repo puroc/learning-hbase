@@ -17,7 +17,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 /**
  * Created by puroc on 17/5/24.
  */
-public class Main {
+public class Testcase1 {
 
     //    执行插入操作的线程数
     public static final int THREAD_COUNT = 5;
@@ -134,8 +134,6 @@ public class Main {
 
                 final List<Put> list = new ArrayList<Put>();
                 for (int i = 0; i < ROW_COUNT_PER_THREAD; i++) {
-                    //                                String rowKey = System.currentTimeMillis() + random.nextInt
-                    // (99999) + "";
                     String rowKey = threadName + "-" + i;
                     if (i % 100 == 0) {
                         System.out.println("thread "+threadName+" insert "+ i + " row");
@@ -190,7 +188,7 @@ public class Main {
             Get get = new Get(Bytes.toBytes("0-100"));
             for (int i = 0; i < QUERY_NUM; i++) {
                 get.addColumn(Bytes.toBytes(columnFamily), Bytes.toBytes(COLUMN + i)); // 获取指定列族和列修饰符对应的列
-            }
+        }
             Result result = table.get(get);
             AtomicInteger resultNum = new AtomicInteger(0);
             for (KeyValue kv : result.list()) {
@@ -209,7 +207,7 @@ public class Main {
     }
 
     public static void main(String[] args) throws IOException {
-        final Main main = new Main();
+        final Testcase1 main = new Testcase1();
         main.init();
 //        main.deleteTable();
 //        main.createTable();

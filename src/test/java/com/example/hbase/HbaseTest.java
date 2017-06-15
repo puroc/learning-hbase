@@ -1,10 +1,7 @@
 package com.example.hbase;
 
 import org.apache.hadoop.conf.Configuration;
-import org.apache.hadoop.hbase.HBaseConfiguration;
-import org.apache.hadoop.hbase.HColumnDescriptor;
-import org.apache.hadoop.hbase.HTableDescriptor;
-import org.apache.hadoop.hbase.KeyValue;
+import org.apache.hadoop.hbase.*;
 import org.apache.hadoop.hbase.client.*;
 import org.apache.hadoop.hbase.util.Bytes;
 import org.junit.After;
@@ -19,26 +16,34 @@ import java.io.IOException;
  */
 public class HbaseTest {
 
-    private Configuration configuration;
+    private Configuration conf;
 
     private String tableName = "test1";
 
     private String[] columns = new String[]{"name", "age"};
 
-    private String columnFamily = "abc";
-
     private String[] values = new String[]{"lisi", "18"};
 
-    private HBaseAdmin admin;
+    private String[] columns2 = new String[]{"sex", "career"};
+
+    private String[] values2 = new String[]{"male", "developer"};
+
+    private String columnFamily = "abc";
+
+    private Admin admin;
+
+    private Connection connection;
 
 
     @Before
     public void setUp() throws Exception {
         try {
-            configuration = HBaseConfiguration.create();
-            configuration.set("hbase.zookeeper.property.clientPort", "2181");
-            configuration.set("hbase.zookeeper.quorum", "cdh1");
-            admin = new HBaseAdmin(configuration);
+            conf = HBaseConfiguration.create();
+            conf.set("hbase.zookeeper.property.clientPort", "2181");
+            conf.set("hbase.zookeeper.quorum", "big-data-205");
+            //connection应全局唯一,确保所有的操作使用的都是同一个connnection
+            connection = ConnectionFactory.createConnection(conf);
+            admin = connection.getAdmin();
         } catch (Throwable e) {
             e.printStackTrace();
             Assert.fail();
@@ -48,7 +53,12 @@ public class HbaseTest {
     @After
     public void tearDown() throws Exception {
         try {
-            admin.close();
+            if (connection != null) {
+                connection.close();
+            }
+            if (admin != null) {
+                admin.close();
+            }
         } catch (Throwable e) {
             e.printStackTrace();
             Assert.fail();
@@ -57,22 +67,30 @@ public class HbaseTest {
 
     @Test
     public void testCreateTable() throws Exception {
-        HBaseAdmin admin = new HBaseAdmin(configuration);
+        Table table = null;
+        try {
+            if (admin.tableExists(TableName.valueOf(tableName))) {
+                Assert.fail();
+            }
 
-        if (admin.tableExists(tableName)) {
+            HTableDescriptor tableDescriptor = new HTableDescriptor(TableName.valueOf(tableName));
+            tableDescriptor.addFamily(new HColumnDescriptor(columnFamily));
+            admin.createTable(tableDescriptor);
+        } catch (Throwable e) {
+            e.printStackTrace();
             Assert.fail();
         }
-
-        HTableDescriptor desc = new HTableDescriptor(tableName);
-        desc.addFamily(new HColumnDescriptor(columnFamily));
-        admin.createTable(desc);
     }
 
     @Test
     public void testDeleteTable() throws Exception {
         try {
-            admin.disableTable(tableName);
-            admin.deleteTable(tableName);
+            if (!admin.tableExists(TableName.valueOf(tableName))) {
+                Assert.fail();
+                return;
+            }
+            admin.disableTable(TableName.valueOf(tableName));
+            admin.deleteTable(TableName.valueOf(tableName));
         } catch (Throwable e) {
             e.printStackTrace();
             Assert.fail();
@@ -84,35 +102,57 @@ public class HbaseTest {
         try {
             String row1 = "1";
             String row2 = "2";
-            insert(row1);
-            insert(row2);
+            insert(row1, columns, values);
+            insert(row2, columns, values);
         } catch (Throwable e) {
             e.printStackTrace();
             Assert.fail();
         }
-
     }
 
-    private void insert(String row) throws IOException {
-        HTable table = new HTable(configuration, tableName);
-        Put put = new Put(Bytes.toBytes(row));
+    @Test
+    public void testInsert2() throws Exception {
+        try {
+            String row1 = "1";
+            String row2 = "2";
+            insert(row1, columns2, values2);
+            insert(row2, columns2, values2);
+        } catch (Throwable e) {
+            e.printStackTrace();
+            Assert.fail();
+        }
+    }
 
-        HColumnDescriptor[] columnFamilies = table.getTableDescriptor() // 获取所有的列族
-                .getColumnFamilies();
-        System.out.println(columnFamilies.length);
-        for (int i = 0; i < columns.length; i++) {
-            put.add(Bytes.toBytes(columnFamily),
-                    Bytes.toBytes(String.valueOf(columns[i])),
-                    Bytes.toBytes(values[i]));
-            table.put(put);
+    private void insert(String row, String[] columns, String[] values) throws IOException {
+        Table table = null;
+        try {
+            table = connection.getTable(TableName.valueOf(tableName));
+            Put put = new Put(Bytes.toBytes(row));
+            HColumnDescriptor[] columnFamilies = table.getTableDescriptor() // 获取所有的列族
+                    .getColumnFamilies();
+            System.out.println(columnFamilies.length);
+            for (int i = 0; i < columns.length; i++) {
+                put.addColumn(Bytes.toBytes(columnFamily),
+                        Bytes.toBytes(String.valueOf(columns[i])),
+                        Bytes.toBytes(values[i]));
+                table.put(put);
+            }
+        } catch (IOException e) {
+            e.printStackTrace();
+            Assert.fail();
+        } finally {
+            if (table != null) {
+                table.close();
+            }
         }
     }
 
     @Test
     public void testQueryByRowKey() throws Exception {
+        Table table = null;
         try {
+            table = connection.getTable(TableName.valueOf(tableName));
             Get get = new Get(Bytes.toBytes("1"));
-            HTable table = new HTable(configuration, Bytes.toBytes(tableName));// 获取表
             Result result = table.get(get);
             for (KeyValue kv : result.list()) {
                 System.out.println("family:" + Bytes.toString(kv.getFamily()));
@@ -125,6 +165,36 @@ public class HbaseTest {
         } catch (Throwable e) {
             e.printStackTrace();
             Assert.fail();
+        } finally {
+            if (table != null) {
+                table.close();
+            }
+        }
+    }
+
+    @Test
+    public void testQueryByTimerange() throws Exception {
+        Table table = null;
+        try {
+            table = connection.getTable(TableName.valueOf(tableName));
+            Get get = new Get(Bytes.toBytes("1"));
+            get.setTimeRange(1497501997188L, Long.MAX_VALUE);
+            Result result = table.get(get);
+            for (KeyValue kv : result.list()) {
+                System.out.println("family:" + Bytes.toString(kv.getFamily()));
+                System.out
+                        .println("qualifier:" + Bytes.toString(kv.getQualifier()));
+                System.out.println("value:" + Bytes.toString(kv.getValue()));
+                System.out.println("Timestamp:" + kv.getTimestamp());
+                System.out.println("-------------------------------------------");
+            }
+        } catch (Throwable e) {
+            e.printStackTrace();
+            Assert.fail();
+        } finally {
+            if (table != null) {
+                table.close();
+            }
         }
     }
 
@@ -132,8 +202,9 @@ public class HbaseTest {
     public void testScan() throws Exception {
         Scan scan = new Scan();
         ResultScanner rs = null;
-        HTable table = new HTable(configuration, Bytes.toBytes(tableName));
+        Table table = null;
         try {
+            table = connection.getTable(TableName.valueOf(tableName));
             rs = table.getScanner(scan);
             for (Result r : rs) {
                 for (KeyValue kv : r.list()) {
@@ -153,9 +224,13 @@ public class HbaseTest {
             e.printStackTrace();
             Assert.fail();
         } finally {
-            rs.close();
+            if (rs != null) {
+                rs.close();
+            }
+            if (table != null) {
+                table.close();
+            }
         }
-
     }
 
     @Test
@@ -164,8 +239,9 @@ public class HbaseTest {
         scan.setStartRow(Bytes.toBytes("1"));
         scan.setStopRow(Bytes.toBytes("1"));
         ResultScanner rs = null;
-        HTable table = new HTable(configuration, Bytes.toBytes(tableName));
+        Table table = null;
         try {
+            table = connection.getTable(TableName.valueOf(tableName));
             rs = table.getScanner(scan);
             for (Result r : rs) {
                 for (KeyValue kv : r.list()) {
@@ -181,20 +257,24 @@ public class HbaseTest {
                             .println("-------------------------------------------");
                 }
             }
-
         } catch (Throwable e) {
             e.printStackTrace();
             Assert.fail();
         } finally {
-            rs.close();
+            if (rs != null) {
+                rs.close();
+            }
+            if (table != null) {
+                table.close();
+            }
         }
-
     }
 
     @Test
     public void testQueryByColumn() throws Exception {
+        Table table = null;
         try {
-            HTable table = new HTable(configuration, Bytes.toBytes(tableName));
+            table = connection.getTable(TableName.valueOf(tableName));
             Get get = new Get(Bytes.toBytes("1"));
             get.addColumn(Bytes.toBytes(columnFamily), Bytes.toBytes("name")); // 获取指定列族和列修饰符对应的列
             get.addColumn(Bytes.toBytes(columnFamily), Bytes.toBytes("age")); // 获取指定列族和列修饰符对应的列
@@ -210,13 +290,18 @@ public class HbaseTest {
         } catch (Throwable e) {
             e.printStackTrace();
             Assert.fail();
+        } finally {
+            if (table != null) {
+                table.close();
+            }
         }
     }
 
     @Test
     public void testDeleteColumn() throws Exception {
+        Table table = null;
         try {
-            HTable table = new HTable(configuration, Bytes.toBytes(tableName));
+            table = connection.getTable(TableName.valueOf(tableName));
             Delete deleteColumn = new Delete(Bytes.toBytes("1"));
             deleteColumn.deleteColumns(Bytes.toBytes(columnFamily),
                     Bytes.toBytes("age"));
@@ -224,18 +309,27 @@ public class HbaseTest {
         } catch (Throwable e) {
             e.printStackTrace();
             Assert.fail();
+        } finally {
+            if (table != null) {
+                table.close();
+            }
         }
     }
 
     @Test
     public void testDeleteAllColumn() throws Exception {
+        Table table = null;
         try {
-            HTable table = new HTable(configuration, Bytes.toBytes(tableName));
+            table = connection.getTable(TableName.valueOf(tableName));
             Delete deleteAll = new Delete(Bytes.toBytes("2"));
             table.delete(deleteAll);
         } catch (Throwable e) {
             e.printStackTrace();
             Assert.fail();
+        } finally {
+            if (table != null) {
+                table.close();
+            }
         }
     }
 }
