@@ -2,12 +2,10 @@ package com.example.hbase;
 
 
 import org.apache.hadoop.conf.Configuration;
-import org.apache.hadoop.hbase.HBaseConfiguration;
-import org.apache.hadoop.hbase.HColumnDescriptor;
-import org.apache.hadoop.hbase.HTableDescriptor;
-import org.apache.hadoop.hbase.KeyValue;
+import org.apache.hadoop.hbase.*;
 import org.apache.hadoop.hbase.client.*;
 import org.apache.hadoop.hbase.util.Bytes;
+import org.junit.Assert;
 
 import java.io.IOException;
 import java.util.ArrayList;
@@ -47,6 +45,8 @@ public class Testcase1 {
 
     private HBaseAdmin admin;
 
+    private Connection connection;
+
     public static final String COLUMN = "column-";
 
     public static final String VALUE = "value-";
@@ -74,33 +74,36 @@ public class Testcase1 {
     }
 
     private void createTable() {
+        Table table = null;
         try {
-            HBaseAdmin admin = new HBaseAdmin(configuration);
-
-            if (admin.tableExists(tableName)) {
-                throw new RuntimeException("table " + tableName + " has already exist.");
+            if (admin.tableExists(TableName.valueOf(tableName))) {
+                Assert.fail();
             }
 
-            HTableDescriptor desc = new HTableDescriptor(tableName);
-            desc.addFamily(new HColumnDescriptor(columnFamily));
-            admin.createTable(desc);
-            System.out.println("create table " + tableName + " finish.");
+            HTableDescriptor tableDescriptor = new HTableDescriptor(TableName.valueOf(tableName));
+            tableDescriptor.addFamily(new HColumnDescriptor(columnFamily));
+            admin.createTable(tableDescriptor);
         } catch (Throwable e) {
             e.printStackTrace();
+            Assert.fail();
         }
     }
 
     private void deleteTable() {
         try {
-            admin.disableTable(tableName);
-            admin.deleteTable(tableName);
-            System.out.println("delete table " + tableName + " finish.");
+            if (!admin.tableExists(TableName.valueOf(tableName))) {
+                Assert.fail();
+                return;
+            }
+            admin.disableTable(TableName.valueOf(tableName));
+            admin.deleteTable(TableName.valueOf(tableName));
         } catch (Throwable e) {
             e.printStackTrace();
+            Assert.fail();
         }
     }
 
-    private void insert(HTable table, String row, List<Put> list) throws IOException {
+    private void insertAllColumns(HTable table, String row, List<Put> list) throws IOException {
         Put put = new Put(Bytes.toBytes(row));
         put.setWriteToWAL(false);
         for (int i = 0; i < columns.length; i++) {
@@ -116,48 +119,103 @@ public class Testcase1 {
         }
     }
 
+    private void insertOneColumn(HTable table, String row, int index, List<Put> list) throws IOException {
+        Put put = new Put(Bytes.toBytes(row));
+        put.setWriteToWAL(false);
+        put.add(Bytes.toBytes(columnFamily),
+                Bytes.toBytes(columns[index]),
+                Bytes.toBytes(values[index]));
+        list.add(put);
+        if (list.size() % BATCH_INSERT_NUM == 0) {
+            table.put(list);
+            table.flushCommits();
+            list.clear();
+        }
+    }
+
+
     class Task implements Runnable {
 
-        private final String threadName;
+        private String threadName;
 
-        public Task(String name) {
+        private HTable table;
+
+        private boolean insertByRow;
+
+        public Task(String name, boolean insertByRow) {
             this.threadName = name;
+            this.insertByRow = insertByRow;
         }
 
         public void run() {
-            try {
-                System.out.println(threadName + " start insert.");
 
-                final HTable table = new HTable(configuration, tableName);
+            try {
+                System.out.println(threadName + " start insertAllColumns.");
+
+                table = (HTable) connection.getTable(TableName.valueOf(tableName));
                 table.setAutoFlush(false);
                 table.setWriteBufferSize(24 * 1024 * 1024);
 
                 final List<Put> list = new ArrayList<Put>();
-                for (int i = 0; i < ROW_COUNT_PER_THREAD; i++) {
-                    String rowKey = threadName + "-" + i;
-                    if (i % 100 == 0) {
-                        System.out.println("thread "+threadName+" insert "+ i + " row");
-                    }
+
+                if (insertByRow) {
+                    insertByRow(list);
+                } else {
+                    insertByColumn(list);
+                }
+
+                System.out.println(threadName + " finish.");
+            } catch (Throwable e) {
+                e.printStackTrace();
+            } finally {
+                if (table != null) {
                     try {
-                        insert(table, rowKey, list);
+                        table.close();
+                    } catch (IOException e) {
+                        e.printStackTrace();
+                    }
+                }
+            }
+        }
+
+        private void insertByRow(List<Put> list) {
+            for (int i = 0; i < ROW_COUNT_PER_THREAD; i++) {
+                String rowKey = threadName + "-" + i;
+                if (i % BATCH_INSERT_NUM == 0) {
+                    System.out.println("thread " + threadName + " insert " + i + " row");
+                }
+                try {
+                    insertAllColumns(table, rowKey, list);
+                } catch (Throwable e) {
+                    e.printStackTrace();
+                }
+            }
+        }
+
+        private void insertByColumn(List<Put> list) {
+            for (int j = 0; j < columnNum; j++) {
+                for (int i = 0; i < ROW_COUNT_PER_THREAD; i++) {
+                    try {
+                        String rowKey = threadName + "-" + i;
+                        if (j % BATCH_INSERT_NUM == 0 || i == columnNum) {
+                            System.out.println("thread " + threadName + " insert " + j + " Column");
+                        }
+                        insertOneColumn(table, rowKey, j, list);
                     } catch (Throwable e) {
                         e.printStackTrace();
                     }
                 }
-                System.out.println(threadName + " finish.");
-            } catch (Throwable e) {
-                e.printStackTrace();
             }
         }
     }
 
-    private void batchInsert() throws IOException {
+    private void batchInsert(boolean insertByRow) throws IOException {
         long start = System.currentTimeMillis();
 
         //创建线程
         List<Thread> threadList = new ArrayList<Thread>();
         for (int i = 0; i < THREAD_COUNT; i++) {
-            Thread thread = new Thread(new Task(i + ""));
+            Thread thread = new Thread(new Task(i + "", insertByRow));
             threadList.add(thread);
         }
 
@@ -180,23 +238,34 @@ public class Testcase1 {
         System.out.println("num:" + ROW_COUNT_PER_THREAD * THREAD_COUNT + ",time:" + (stop - start));
     }
 
-    private void batchQuery() {
+    private void batchQuery(boolean byTimeRange) {
         long start = System.currentTimeMillis();
         try {
             HTable table = new HTable(configuration, Bytes.toBytes(tableName));
+
             //查询第一行数据
             Get get = new Get(Bytes.toBytes("0-100"));
-            for (int i = 0; i < QUERY_NUM; i++) {
-                get.addColumn(Bytes.toBytes(columnFamily), Bytes.toBytes(COLUMN + i)); // 获取指定列族和列修饰符对应的列
-        }
+            if (byTimeRange) {
+                get.setTimeRange(get.getTimeRange().getMin(), get.getTimeRange().getMax());
+            } else {
+                for (int i = 0; i < QUERY_NUM; i++) {
+                    get.addColumn(Bytes.toBytes(columnFamily), Bytes.toBytes(COLUMN + i)); // 获取指定列族和列修饰符对应的列
+                }
+            }
             Result result = table.get(get);
             AtomicInteger resultNum = new AtomicInteger(0);
             for (KeyValue kv : result.list()) {
 //                System.out.println(Bytes.toString(kv.getValueArray()));
                 resultNum.incrementAndGet();
             }
+            int expectResultNum;
             //如果实际查询结果跟要查询的数量不相等,代表查询出现异常
-            if (resultNum.get() != QUERY_NUM) {
+            if(byTimeRange) {
+                expectResultNum = columnNum;
+            }else{
+                expectResultNum = QUERY_NUM;
+            }
+            if (resultNum.get() != expectResultNum) {
                 throw new RuntimeException("resultNum is not equal to queryNum");
             }
         } catch (Throwable e) {
@@ -211,7 +280,7 @@ public class Testcase1 {
         main.init();
 //        main.deleteTable();
 //        main.createTable();
-//        main.batchInsert();
-        main.batchQuery();
+        main.batchInsert(false);
+        main.batchQuery(true);
     }
 }
