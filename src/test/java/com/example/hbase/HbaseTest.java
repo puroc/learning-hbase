@@ -40,7 +40,8 @@ public class HbaseTest {
         try {
             conf = HBaseConfiguration.create();
             conf.set("hbase.zookeeper.property.clientPort", "2181");
-            conf.set("hbase.zookeeper.quorum", "big-data-205");
+//            conf.set("hbase.zookeeper.quorum", "big-data-205");
+            conf.set("hbase.zookeeper.quorum", "cdh1");
             //connection应全局唯一,确保所有的操作使用的都是同一个connnection
             connection = ConnectionFactory.createConnection(conf);
             admin = connection.getAdmin();

@@ -18,13 +18,13 @@ import java.util.concurrent.atomic.AtomicInteger;
 public class Testcase1 {
 
     //    执行插入操作的线程数
-    public static final int THREAD_COUNT = 5;
+    public static final int THREAD_COUNT = 1;
 
     //    每个插入线程插入的记录数
-    public static final long ROW_COUNT_PER_THREAD = 10000;
+    public static final long ROW_COUNT_PER_THREAD = 1;
 
     //    一次批量插入操作的消息数
-    public static final int BATCH_INSERT_NUM = 100;
+    public static final int BATCH_INSERT_NUM = 1;
 
     private Configuration configuration;
 
@@ -34,7 +34,12 @@ public class Testcase1 {
     private String columnFamily = "abc";
 
     //    每条记录的字段数量
-    private static int columnNum = 17280;
+    //1秒采集一次,一个月的数据量
+    private static int columnNum = 2592000;
+    //1秒采集一次,一年的数据量
+//    private static int columnNum = 31104000;
+    //半分钟采集一次,一年的数据量
+//    private static int columnNum = 17280;
 
     //    查询操作要查询的字段数量
     public static final int QUERY_NUM = 1440;
@@ -43,18 +48,18 @@ public class Testcase1 {
 
     private static String[] values = new String[columnNum];
 
-    private HBaseAdmin admin;
+    private Admin admin;
 
     private Connection connection;
 
     public static final String COLUMN = "column-";
 
-    public static final String VALUE = "value-";
+    public static final String VALUE = new String(new byte[32]);
 
     static {
         for (int i = 0; i < columnNum; i++) {
             columns[i] = COLUMN + i;
-            values[i] = VALUE + i;
+            values[i] = VALUE;
         }
     }
 
@@ -65,9 +70,9 @@ public class Testcase1 {
             configuration.set("hbase.zookeeper.quorum", "cdh1");
             configuration.set("hbase.client.pause", "200");
             configuration.set("hbase.ipc.client.tcpnodelay", "true");
-
-//            configuration.set("hbase.zookeeper.quorum", "master");
-            admin = new HBaseAdmin(configuration);
+            configuration.set("hbase.client.write.buffer", "100");
+            connection = ConnectionFactory.createConnection(configuration);
+            admin = connection.getAdmin();
         } catch (Throwable e) {
             e.printStackTrace();
         }
@@ -105,6 +110,7 @@ public class Testcase1 {
 
     private void insertAllColumns(HTable table, String row, List<Put> list) throws IOException {
         Put put = new Put(Bytes.toBytes(row));
+        //不写wal日志,可以提高性能
         put.setWriteToWAL(false);
         for (int i = 0; i < columns.length; i++) {
             put.add(Bytes.toBytes(columnFamily),
@@ -116,20 +122,24 @@ public class Testcase1 {
             table.put(list);
             table.flushCommits();
             list.clear();
+            Counter.getInstance().add();
         }
     }
 
     private void insertOneColumn(HTable table, String row, int index, List<Put> list) throws IOException {
         Put put = new Put(Bytes.toBytes(row));
+        //不写wal日志,可以提高性能
         put.setWriteToWAL(false);
         put.add(Bytes.toBytes(columnFamily),
                 Bytes.toBytes(columns[index]),
                 Bytes.toBytes(values[index]));
         list.add(put);
+        Counter.getInstance().add();
         if (list.size() % BATCH_INSERT_NUM == 0) {
             table.put(list);
             table.flushCommits();
             list.clear();
+//            Counter.getInstance().add();
         }
     }
 
@@ -193,13 +203,15 @@ public class Testcase1 {
         }
 
         private void insertByColumn(List<Put> list) {
+//            AtomicLong currentNum = new AtomicLong();
             for (int j = 0; j < columnNum; j++) {
                 for (int i = 0; i < ROW_COUNT_PER_THREAD; i++) {
                     try {
                         String rowKey = threadName + "-" + i;
-                        if (j % BATCH_INSERT_NUM == 0 || i == columnNum) {
-                            System.out.println("thread " + threadName + " insert " + j + " Column");
-                        }
+//                        if (currentNum.incrementAndGet() % BATCH_INSERT_NUM == 0) {
+//                            System.out.println("thread " + threadName + " insert " + j + " Column");
+//                            currentNum.set(0);
+//                        }
                         insertOneColumn(table, rowKey, j, list);
                     } catch (Throwable e) {
                         e.printStackTrace();
@@ -210,6 +222,7 @@ public class Testcase1 {
     }
 
     private void batchInsert(boolean insertByRow) throws IOException {
+        Counter.getInstance().start();
         long start = System.currentTimeMillis();
 
         //创建线程
@@ -236,15 +249,18 @@ public class Testcase1 {
         long stop = System.currentTimeMillis();
 
         System.out.println("num:" + ROW_COUNT_PER_THREAD * THREAD_COUNT + ",time:" + (stop - start));
+
+        Counter.getInstance().stop();
     }
 
     private void batchQuery(boolean byTimeRange) {
         long start = System.currentTimeMillis();
+        int expectResultNum = 0;
         try {
             HTable table = new HTable(configuration, Bytes.toBytes(tableName));
 
             //查询第一行数据
-            Get get = new Get(Bytes.toBytes("0-1"));
+            Get get = new Get(Bytes.toBytes("0-9"));
             if (byTimeRange) {
                 get.setTimeRange(get.getTimeRange().getMin(), get.getTimeRange().getMax());
             } else {
@@ -258,11 +274,11 @@ public class Testcase1 {
 //                System.out.println(Bytes.toString(kv.getValueArray()));
                 resultNum.incrementAndGet();
             }
-            int expectResultNum;
+
             //如果实际查询结果跟要查询的数量不相等,代表查询出现异常
-            if(byTimeRange) {
+            if (byTimeRange) {
                 expectResultNum = columnNum;
-            }else{
+            } else {
                 expectResultNum = QUERY_NUM;
             }
             if (resultNum.get() != expectResultNum) {
@@ -272,7 +288,7 @@ public class Testcase1 {
             e.printStackTrace();
         }
         long stop = System.currentTimeMillis();
-        System.out.println("queryNum:" + QUERY_NUM + ",time:" + (stop - start));
+        System.out.println("queryNum:" + expectResultNum + ",time:" + (stop - start));
     }
 
     public static void main(String[] args) throws IOException {
@@ -281,6 +297,7 @@ public class Testcase1 {
 //        main.deleteTable();
 //        main.createTable();
         main.batchInsert(false);
-        main.batchQuery(true);
+//        main.batchQuery(true);
+
     }
 }

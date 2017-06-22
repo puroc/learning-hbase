@@ -39,6 +39,10 @@ public class Counter {
         return num.get();
     }
 
+    public void stop() {
+        timer.cancel();
+    }
+
     class MyTimerTask extends TimerTask{
 
         public void run() {
