@@ -10,6 +10,7 @@ import org.junit.Assert;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
 
 /**
@@ -18,13 +19,13 @@ import java.util.concurrent.atomic.AtomicInteger;
 public class Testcase1 {
 
     //    执行插入操作的线程数
-    public static final int THREAD_COUNT = 1;
+    public static final int THREAD_COUNT = 50;
 
     //    每个插入线程插入的记录数
-    public static final long ROW_COUNT_PER_THREAD = 1;
+    public static final long ROW_COUNT_PER_THREAD = 100;
 
     //    一次批量插入操作的消息数
-    public static final int BATCH_INSERT_NUM = 1;
+    public static final int BATCH_INSERT_NUM = 100;
 
     private Configuration configuration;
 
@@ -56,10 +57,53 @@ public class Testcase1 {
 
     public static final String VALUE = new String(new byte[32]);
 
+    private AtomicInteger total = new AtomicInteger(0);
+
+    private static ConcurrentHashMap<String, Work> workMap = new ConcurrentHashMap<String, Work>();
+
     static {
+        //对插入的数据赋值
         for (int i = 0; i < columnNum; i++) {
             columns[i] = COLUMN + i;
             values[i] = VALUE;
+        }
+        //将不同的列分工到不同的线程
+        int part = columnNum % THREAD_COUNT;
+        int eachThreadCloumn = columnNum / THREAD_COUNT;
+        int startIndex = 0;
+        for (int i = 0; i < THREAD_COUNT; i++) {
+            Work work = new Work();
+            if (i == THREAD_COUNT - 1) {
+                work.setStartIndex(startIndex);
+                work.setEntIndex(startIndex + eachThreadCloumn + part);
+            } else {
+                work.setStartIndex(startIndex);
+                work.setEntIndex(startIndex + eachThreadCloumn);
+                startIndex += eachThreadCloumn;
+            }
+            workMap.putIfAbsent(i + "", work);
+        }
+    }
+
+    static class Work {
+        private int startIndex;
+
+        private int entIndex;
+
+        public int getStartIndex() {
+            return startIndex;
+        }
+
+        public void setStartIndex(int startIndex) {
+            this.startIndex = startIndex;
+        }
+
+        public int getEntIndex() {
+            return entIndex;
+        }
+
+        public void setEntIndex(int entIndex) {
+            this.entIndex = entIndex;
         }
     }
 
@@ -88,6 +132,7 @@ public class Testcase1 {
             HTableDescriptor tableDescriptor = new HTableDescriptor(TableName.valueOf(tableName));
             tableDescriptor.addFamily(new HColumnDescriptor(columnFamily));
             admin.createTable(tableDescriptor);
+            System.out.println("表已创建");
         } catch (Throwable e) {
             e.printStackTrace();
             Assert.fail();
@@ -102,6 +147,7 @@ public class Testcase1 {
             }
             admin.disableTable(TableName.valueOf(tableName));
             admin.deleteTable(TableName.valueOf(tableName));
+            System.out.println("表已删除");
         } catch (Throwable e) {
             e.printStackTrace();
             Assert.fail();
@@ -126,7 +172,8 @@ public class Testcase1 {
         }
     }
 
-    private void insertOneColumn(HTable table, String row, int index, List<Put> list) throws IOException {
+    private void insertOneColumn(String threadName, HTable table, String row, int index, List<Put> list) throws
+            IOException {
         Put put = new Put(Bytes.toBytes(row));
         //不写wal日志,可以提高性能
         put.setWriteToWAL(false);
@@ -139,41 +186,36 @@ public class Testcase1 {
             table.put(list);
             table.flushCommits();
             list.clear();
-//            Counter.getInstance().add();
+//            System.out.println(threadName + ":insert " + BATCH_INSERT_NUM + " cloumns");
         }
     }
 
 
     class Task implements Runnable {
 
+        private boolean isMultipleThread;
+
         private String threadName;
 
         private HTable table;
 
-        private boolean insertByRow;
-
-        public Task(String name, boolean insertByRow) {
+        public Task(String name, boolean isMultipleThread) {
             this.threadName = name;
-            this.insertByRow = insertByRow;
+            this.isMultipleThread = isMultipleThread;
         }
 
         public void run() {
-
             try {
                 System.out.println(threadName + " start insertAllColumns.");
-
                 table = (HTable) connection.getTable(TableName.valueOf(tableName));
                 table.setAutoFlush(false);
                 table.setWriteBufferSize(24 * 1024 * 1024);
-
                 final List<Put> list = new ArrayList<Put>();
-
-                if (insertByRow) {
-                    insertByRow(list);
+                if (isMultipleThread) {
+                    insertColumnWithMultipleThread(list);
                 } else {
-                    insertByColumn(list);
+                    insertColumnWithSingleThread(list);
                 }
-
                 System.out.println(threadName + " finish.");
             } catch (Throwable e) {
                 e.printStackTrace();
@@ -188,31 +230,33 @@ public class Testcase1 {
             }
         }
 
-        private void insertByRow(List<Put> list) {
-            for (int i = 0; i < ROW_COUNT_PER_THREAD; i++) {
-                String rowKey = threadName + "-" + i;
-                if (i % BATCH_INSERT_NUM == 0) {
-                    System.out.println("thread " + threadName + " insert " + i + " row");
+
+
+        //每行的所有列由多个线程负责插入
+        private void insertColumnWithMultipleThread(List<Put> list) {
+            final Work work = workMap.get(threadName);
+            for (int j = work.getStartIndex(); j < work.getEntIndex(); j++) {
+                if (total.incrementAndGet() % 10000 == 0) {
+                    System.out.println(total.get() + " columns has inserted.");
                 }
-                try {
-                    insertAllColumns(table, rowKey, list);
-                } catch (Throwable e) {
-                    e.printStackTrace();
+                for (int i = 0; i < ROW_COUNT_PER_THREAD; i++) {
+                    try {
+                        String rowKey = i + "";
+                        insertOneColumn(threadName, table, rowKey, j, list);
+                    } catch (Throwable e) {
+                        e.printStackTrace();
+                    }
                 }
             }
         }
 
-        private void insertByColumn(List<Put> list) {
-//            AtomicLong currentNum = new AtomicLong();
+        //每个线程负责插入一行的所有列
+        private void insertColumnWithSingleThread(List<Put> list) {
             for (int j = 0; j < columnNum; j++) {
                 for (int i = 0; i < ROW_COUNT_PER_THREAD; i++) {
                     try {
                         String rowKey = threadName + "-" + i;
-//                        if (currentNum.incrementAndGet() % BATCH_INSERT_NUM == 0) {
-//                            System.out.println("thread " + threadName + " insert " + j + " Column");
-//                            currentNum.set(0);
-//                        }
-                        insertOneColumn(table, rowKey, j, list);
+                        insertOneColumn(threadName, table, rowKey, j, list);
                     } catch (Throwable e) {
                         e.printStackTrace();
                     }
@@ -221,14 +265,15 @@ public class Testcase1 {
         }
     }
 
-    private void batchInsert(boolean insertByRow) throws IOException {
+
+    private void batchInsert(boolean insertByMultiThread) throws IOException {
         Counter.getInstance().start();
         long start = System.currentTimeMillis();
 
         //创建线程
         List<Thread> threadList = new ArrayList<Thread>();
         for (int i = 0; i < THREAD_COUNT; i++) {
-            Thread thread = new Thread(new Task(i + "", insertByRow));
+            Thread thread = new Thread(new Task(i + "", insertByMultiThread));
             threadList.add(thread);
         }
 
@@ -248,10 +293,14 @@ public class Testcase1 {
 
         long stop = System.currentTimeMillis();
 
-        System.out.println("num:" + ROW_COUNT_PER_THREAD * THREAD_COUNT + ",time:" + (stop - start));
-
+        if (insertByMultiThread) {
+            System.out.println("num:" + ROW_COUNT_PER_THREAD + ",time:" + (stop - start));
+        } else {
+            System.out.println("num:" + ROW_COUNT_PER_THREAD * THREAD_COUNT + ",time:" + (stop - start));
+        }
         Counter.getInstance().stop();
     }
+
 
     private void batchQuery(boolean byTimeRange) {
         long start = System.currentTimeMillis();
@@ -260,7 +309,8 @@ public class Testcase1 {
             HTable table = new HTable(configuration, Bytes.toBytes(tableName));
 
             //查询第一行数据
-            Get get = new Get(Bytes.toBytes("0-9"));
+//            Get get = new Get(Bytes.toBytes("0-9"));
+            Get get = new Get(Bytes.toBytes("0"));
             if (byTimeRange) {
                 get.setTimeRange(get.getTimeRange().getMin(), get.getTimeRange().getMax());
             } else {
@@ -296,8 +346,12 @@ public class Testcase1 {
         main.init();
 //        main.deleteTable();
 //        main.createTable();
-        main.batchInsert(false);
-//        main.batchQuery(true);
+//        main.batchInsert(true);
+        main.batchQuery(true);
+//        for (Map.Entry<String, Work> entry : workMap.entrySet()) {
+//            System.out.println(entry.getKey() + "," + entry.getValue().getStartIndex() + "," + entry.getValue()
+//                    .getEntIndex());
+//        }
 
     }
 }
