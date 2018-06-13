@@ -1,5 +1,7 @@
-package com.example.hbase;
+package com.example.hbase.badboy;
 
+import com.example.hbase.Counter;
+import com.example.hbase.Utils;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.hbase.HBaseConfiguration;
 import org.apache.hadoop.hbase.HColumnDescriptor;
@@ -10,6 +12,8 @@ import org.apache.hadoop.hbase.util.Bytes;
 import org.junit.Assert;
 
 import java.io.IOException;
+import java.text.ParseException;
+import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Random;
@@ -18,29 +22,44 @@ import java.util.concurrent.atomic.AtomicLong;
 /**
  * Created by puroc on 2017/11/16.
  */
-public class Testcase2 {
+public class PUD_TEST_WATER_HISTORY {
+    public static final int MIN_VALUE = 0;
+    public static final int MAX_VALUE = 300;
+    public static final String YEAR = "2018";
+    public static final String MONTH = "06";
+    public static final String DATE = "01";
+    public static final String HOUR = "15";
+    public static final String TABLE_NAME = "PUD_TEST_2";
+//    public static final String TABLE_NAME = "PUD_TEST_WATER_HISTORY";
+    public static final String ID = "ID";
+    public static final String READING = "READING";
+    public static final String REALVALUE = "REALVALUE";
+    public static final String TIME = "TIME";
 
-    private AtomicLong rowkey = new AtomicLong();
+//phoenix建表语句
+//create table PUD_TEST_2 ("ROW" varchar primary key, "lz"."ID" varchar, "lz"."READING" unsigned_int,"lz"."REALVALUE" unsigned_int,"lz"."TIME" unsigned_time);
+
+    private AtomicLong totalNum = new AtomicLong();
     private Configuration configuration;
     private Connection connection;
     private Admin admin;
-    private String tableName = "IOT_WATER_QUALITY_HISTORY";
-    private String columnFamily = "lz";
-    private static int columnNum = 20;
-    private static String[] columns = new String[columnNum];
-    private static String[] values = new String[columnNum];
-    public static final String COLUMN = "column-";
-    public static final String VALUE = new String(new byte[32]);
-    public static final int THREAD_COUNT = 2;
-    public static final int BATCH_INSERT_NUM = 100;
-    public static final long ROW_COUNT_PER_THREAD = 1000;
 
-    static {
-        for (int i = 0; i < columnNum; i++) {
-            columns[i] = COLUMN + i;
-            values[i] = VALUE;
-        }
-    }
+    private String columnFamily = "lz";
+//    private static int columnNum = 20;
+//    private static String[] columns = new String[columnNum];
+//    private static String[] values = new String[columnNum];
+//    public static final String COLUMN = "column-";
+//    public static final String VALUE = new String(new byte[32]);
+    public static final int THREAD_COUNT = 50;
+    public static final int BATCH_INSERT_NUM = 100;
+    public static final long ROW_COUNT_PER_THREAD = 5000;
+
+//    static {
+//        for (int i = 0; i < columnNum; i++) {
+//            columns[i] = COLUMN + i;
+//            values[i] = VALUE;
+//        }
+//    }
 
 
     private void init() {
@@ -60,12 +79,12 @@ public class Testcase2 {
 
     private void deleteTable() {
         try {
-            if (!admin.tableExists(TableName.valueOf(tableName))) {
+            if (!admin.tableExists(TableName.valueOf(TABLE_NAME))) {
                 Assert.fail();
                 return;
             }
-            admin.disableTable(TableName.valueOf(tableName));
-            admin.deleteTable(TableName.valueOf(tableName));
+            admin.disableTable(TableName.valueOf(TABLE_NAME));
+            admin.deleteTable(TableName.valueOf(TABLE_NAME));
             System.out.println("表已删除");
         } catch (Throwable e) {
             e.printStackTrace();
@@ -76,11 +95,11 @@ public class Testcase2 {
     private void createTable() {
         Table table = null;
         try {
-            if (admin.tableExists(TableName.valueOf(tableName))) {
+            if (admin.tableExists(TableName.valueOf(TABLE_NAME))) {
                 Assert.fail();
             }
 
-            HTableDescriptor tableDescriptor = new HTableDescriptor(TableName.valueOf(tableName));
+            HTableDescriptor tableDescriptor = new HTableDescriptor(TableName.valueOf(TABLE_NAME));
             tableDescriptor.addFamily(new HColumnDescriptor(columnFamily));
             admin.createTable(tableDescriptor);
             System.out.println("表已创建");
@@ -90,32 +109,35 @@ public class Testcase2 {
         }
     }
 
-    private void insertOneLine(String deviceId, HTable table, String row, List<Put> list) throws IOException {
-        Put put = new Put(Bytes.toBytes(row));
+    private void insertOneLine(String deviceId, HTable table, List<Put> list, String time) throws IOException, ParseException {
+        Put put = new Put(Bytes.toBytes(deviceId+"-"+System.currentTimeMillis()+"-"+new Random().nextInt(9999)));
         //不写wal日志,可以提高性能
         put.setWriteToWAL(false);
 
         put.add(Bytes.toBytes(columnFamily),
-                Bytes.toBytes("Id"),
+                Bytes.toBytes(ID),
                 Bytes.toBytes(deviceId));
         put.add(Bytes.toBytes(columnFamily),
-                Bytes.toBytes("ph"),
-                Bytes.toBytes("" + Utils.getRandomValue(6,8)));
+                Bytes.toBytes(READING),
+                Bytes.toBytes( Utils.getRandomValue(MIN_VALUE,MAX_VALUE)));
+//        put.add(Bytes.toBytes(columnFamily),
+//                Bytes.toBytes(REALVALUE),
+//                Bytes.toBytes("" + Utils.getRandomValue(MIN_VALUE, MAX_VALUE)));
         put.add(Bytes.toBytes(columnFamily),
-                Bytes.toBytes("ntu"),
-                Bytes.toBytes("" + Utils.getRandomValue(0,10)/10.0));
+                Bytes.toBytes(REALVALUE),
+                Bytes.toBytes(1));
+
+        SimpleDateFormat format =  new SimpleDateFormat("yyyy-MM-dd HH:mm:ss");
+
+//        put.add(Bytes.toBytes(columnFamily),
+//                Bytes.toBytes(TIME),
+//                Bytes.toBytes(""+format.parse(time).getTime()));
         put.add(Bytes.toBytes(columnFamily),
-                Bytes.toBytes("clclo2"),
-                Bytes.toBytes("" + Utils.getRandomValue(1,8)/10.0));
-        put.add(Bytes.toBytes(columnFamily),
-                Bytes.toBytes("time"),
-                Bytes.toBytes(""+System.currentTimeMillis()));
-        for (int i = 0; i < columns.length; i++) {
-            put.add(Bytes.toBytes(columnFamily),
-                    Bytes.toBytes(columns[i]),
-                    Bytes.toBytes(values[i]));
-        }
+                Bytes.toBytes(TIME),
+                Bytes.toBytes(format.parse(time).getTime()));
+
         list.add(put);
+        totalNum.incrementAndGet();
         if (list.size() % BATCH_INSERT_NUM == 0) {
             table.put(list);
             table.flushCommits();
@@ -124,14 +146,14 @@ public class Testcase2 {
         }
     }
 
-    private void batchInsert() throws IOException {
+    private void batchInsert(String time) throws IOException {
         Counter.getInstance().start();
         long start = System.currentTimeMillis();
 
         //创建线程
         List<Thread> threadList = new ArrayList<Thread>();
         for (int i = 0; i < THREAD_COUNT; i++) {
-            Thread thread = new Thread(new Task("device-"+i ));
+            Thread thread = new Thread(new Task("device"+i,time ));
             threadList.add(thread);
         }
 
@@ -151,7 +173,7 @@ public class Testcase2 {
 
         long stop = System.currentTimeMillis();
 
-        System.out.println("num:" + ROW_COUNT_PER_THREAD + ",time:" + (stop - start));
+        System.out.println("num:" + totalNum.get() + ",time:" + (stop - start));
 
         Counter.getInstance().stop();
     }
@@ -159,23 +181,24 @@ public class Testcase2 {
     class Task implements Runnable {
 
         private String deviceId;
+        private String time;
 
         private HTable table;
 
-        public Task(String deviceId) {
+        public Task(String deviceId,String time) {
             this.deviceId = deviceId;
+            this.time = time;
         }
 
         public void run() {
             try {
                 System.out.println(deviceId + " start insertAllColumns.");
-                table = (HTable) connection.getTable(TableName.valueOf(tableName));
+                table = (HTable) connection.getTable(TableName.valueOf(TABLE_NAME));
                 table.setAutoFlush(false);
                 table.setWriteBufferSize(24 * 1024 * 1024);
                 final List<Put> list = new ArrayList<Put>();
                 for (int i = 0; i < ROW_COUNT_PER_THREAD; i++) {
-                    String key = rowkey.incrementAndGet() + "";
-                    insertOneLine(this.deviceId,table, key, list);
+                    insertOneLine(this.deviceId,table, list,time);
                 }
                 System.out.println(deviceId + " finish.");
             } catch (Throwable e) {
@@ -194,10 +217,11 @@ public class Testcase2 {
 
     public static void main(String[] args) {
         try {
-            Testcase2 main = new Testcase2();
+            PUD_TEST_WATER_HISTORY main = new PUD_TEST_WATER_HISTORY();
             main.init();
-//            main.createTable();
-            main.batchInsert();
+            main.createTable();
+            String time = Utils.getDateString(YEAR, MONTH, DATE, HOUR);
+            main.batchInsert(time);
 //            main.deleteTable();
         } catch (Throwable e) {
             e.printStackTrace();
