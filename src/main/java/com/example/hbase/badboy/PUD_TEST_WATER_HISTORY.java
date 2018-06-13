@@ -26,40 +26,26 @@ public class PUD_TEST_WATER_HISTORY {
     public static final int MIN_VALUE = 0;
     public static final int MAX_VALUE = 300;
     public static final String YEAR = "2018";
-    public static final String MONTH = "06";
+    public static final String MONTH = "01";
     public static final String DATE = "01";
     public static final String HOUR = "15";
-    public static final String TABLE_NAME = "PUD_TEST_2";
-//    public static final String TABLE_NAME = "PUD_TEST_WATER_HISTORY";
+    public static final String TABLE_NAME = "PUD_TEST_WATER_HISTORY";
     public static final String ID = "ID";
     public static final String READING = "READING";
     public static final String REALVALUE = "REALVALUE";
     public static final String TIME = "TIME";
 
 //phoenix建表语句
-//create table PUD_TEST_2 ("ROW" varchar primary key, "lz"."ID" varchar, "lz"."READING" unsigned_int,"lz"."REALVALUE" unsigned_int,"lz"."TIME" unsigned_time);
+//create table PUD_TEST_WATER_HISTORY ("ROW" varchar primary key, "lz"."ID" varchar, "lz"."READING" unsigned_int,"lz"."REALVALUE" unsigned_int,"lz"."TIME" unsigned_time);
 
     private AtomicLong totalNum = new AtomicLong();
     private Configuration configuration;
     private Connection connection;
     private Admin admin;
-
     private String columnFamily = "lz";
-//    private static int columnNum = 20;
-//    private static String[] columns = new String[columnNum];
-//    private static String[] values = new String[columnNum];
-//    public static final String COLUMN = "column-";
-//    public static final String VALUE = new String(new byte[32]);
     public static final int THREAD_COUNT = 50;
     public static final int BATCH_INSERT_NUM = 100;
-    public static final long ROW_COUNT_PER_THREAD = 5000;
-
-//    static {
-//        for (int i = 0; i < columnNum; i++) {
-//            columns[i] = COLUMN + i;
-//            values[i] = VALUE;
-//        }
-//    }
+    public static final long ROW_COUNT_PER_THREAD = 200000;
 
 
     private void init() {
@@ -110,7 +96,7 @@ public class PUD_TEST_WATER_HISTORY {
     }
 
     private void insertOneLine(String deviceId, HTable table, List<Put> list, String time) throws IOException, ParseException {
-        Put put = new Put(Bytes.toBytes(deviceId+"-"+System.currentTimeMillis()+"-"+new Random().nextInt(9999)));
+        Put put = new Put(Bytes.toBytes(deviceId + "-" + System.currentTimeMillis() + "-" + new Random().nextInt(9999)));
         //不写wal日志,可以提高性能
         put.setWriteToWAL(false);
 
@@ -119,23 +105,14 @@ public class PUD_TEST_WATER_HISTORY {
                 Bytes.toBytes(deviceId));
         put.add(Bytes.toBytes(columnFamily),
                 Bytes.toBytes(READING),
-                Bytes.toBytes( Utils.getRandomValue(MIN_VALUE,MAX_VALUE)));
-//        put.add(Bytes.toBytes(columnFamily),
-//                Bytes.toBytes(REALVALUE),
-//                Bytes.toBytes("" + Utils.getRandomValue(MIN_VALUE, MAX_VALUE)));
+                Bytes.toBytes(Utils.getRandomValue(MIN_VALUE, MAX_VALUE)));
         put.add(Bytes.toBytes(columnFamily),
                 Bytes.toBytes(REALVALUE),
-                Bytes.toBytes(1));
-
-        SimpleDateFormat format =  new SimpleDateFormat("yyyy-MM-dd HH:mm:ss");
-
-//        put.add(Bytes.toBytes(columnFamily),
-//                Bytes.toBytes(TIME),
-//                Bytes.toBytes(""+format.parse(time).getTime()));
+                Bytes.toBytes(Utils.getRandomValue(MIN_VALUE, MAX_VALUE)));
+        SimpleDateFormat format = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss");
         put.add(Bytes.toBytes(columnFamily),
                 Bytes.toBytes(TIME),
                 Bytes.toBytes(format.parse(time).getTime()));
-
         list.add(put);
         totalNum.incrementAndGet();
         if (list.size() % BATCH_INSERT_NUM == 0) {
@@ -153,7 +130,7 @@ public class PUD_TEST_WATER_HISTORY {
         //创建线程
         List<Thread> threadList = new ArrayList<Thread>();
         for (int i = 0; i < THREAD_COUNT; i++) {
-            Thread thread = new Thread(new Task("device"+i,time ));
+            Thread thread = new Thread(new Task("device" + i, time));
             threadList.add(thread);
         }
 
@@ -185,7 +162,7 @@ public class PUD_TEST_WATER_HISTORY {
 
         private HTable table;
 
-        public Task(String deviceId,String time) {
+        public Task(String deviceId, String time) {
             this.deviceId = deviceId;
             this.time = time;
         }
@@ -198,7 +175,7 @@ public class PUD_TEST_WATER_HISTORY {
                 table.setWriteBufferSize(24 * 1024 * 1024);
                 final List<Put> list = new ArrayList<Put>();
                 for (int i = 0; i < ROW_COUNT_PER_THREAD; i++) {
-                    insertOneLine(this.deviceId,table, list,time);
+                    insertOneLine(this.deviceId, table, list, time);
                 }
                 System.out.println(deviceId + " finish.");
             } catch (Throwable e) {
@@ -219,7 +196,7 @@ public class PUD_TEST_WATER_HISTORY {
         try {
             PUD_TEST_WATER_HISTORY main = new PUD_TEST_WATER_HISTORY();
             main.init();
-            main.createTable();
+//            main.createTable();
             String time = Utils.getDateString(YEAR, MONTH, DATE, HOUR);
             main.batchInsert(time);
 //            main.deleteTable();
