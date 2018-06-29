@@ -1,4 +1,4 @@
-package com.example.hbase.badboy;
+package com.example.hbase.badboy.phoenix;
 
 import com.example.hbase.Counter;
 import com.example.hbase.Utils;
@@ -197,9 +197,9 @@ public class PUD_TEST_WATER_HISTORY {
             PUD_TEST_WATER_HISTORY main = new PUD_TEST_WATER_HISTORY();
             main.init();
 //            main.createTable();
-            String time = Utils.getDateString(YEAR, MONTH, DATE, HOUR);
-            main.batchInsert(time);
-//            main.deleteTable();
+//            String time = Utils.getDateString(YEAR, MONTH, DATE, HOUR);
+//            main.batchInsert(time);
+            main.deleteTable();
         } catch (Throwable e) {
             e.printStackTrace();
         }
