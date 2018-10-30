@@ -9,8 +9,5 @@
         <module name="learning-hbase" />
       </profile>
     </annotationProcessing>
-    <bytecodeTargetLevel>
-      <module name="learning-hbase" target="1.5" />
-    </bytecodeTargetLevel>
   </component>
 </project>

@@ -10,6 +10,8 @@ import org.junit.Before;
 import org.junit.Test;
 
 import java.io.IOException;
+import java.util.ArrayList;
+import java.util.List;
 
 /**
  * Created by puroc on 2016/11/5.
@@ -163,6 +165,60 @@ public class HbaseTest {
                 System.out.println("Timestamp:" + kv.getTimestamp());
                 System.out.println("-------------------------------------------");
             }
+        } catch (Throwable e) {
+            e.printStackTrace();
+            Assert.fail();
+        } finally {
+            if (table != null) {
+                table.close();
+            }
+        }
+    }
+
+    @Test
+    public void testQueryByRowKey2() throws Exception {
+        final Table table = connection.getTable(TableName.valueOf("iot_alarm_infomation_t"));
+//        final Table table = connection.getTable(TableName.valueOf(tableName));
+        Counter.getInstance().start();
+        try {
+//            table = connection.getTable(TableName.valueOf(tableName));
+            List<Thread> list = new ArrayList<Thread>();
+
+
+            for (int i = 0; i < 30; i++) {
+                list.add(
+                        new Thread(new Runnable() {
+                            public void run() {
+
+                                while (true) {
+                                    try {
+                                        Get get = new Get(Bytes.toBytes("04687c9e-54e7-3253-9550-302010983b87"));
+//                                        Get get = new Get(Bytes.toBytes("1"));
+                                        Result result = table.get(get);
+                                        if (! result.list().isEmpty()) {
+                                            Counter.getInstance().add();
+                                        }
+                                    } catch (IOException e) {
+                                        e.printStackTrace();
+                                    }
+                                }
+                            }
+                        }));
+            }
+            for (Thread thread : list) {
+                thread.start();
+            }
+            for (Thread thread : list) {
+                thread.join();
+            }
+//            for (KeyValue kv : result.list()) {
+//                System.out.println("family:" + Bytes.toString(kv.getFamily()));
+//                System.Counter.javaout
+//                        .println("qualifier:" + Bytes.toString(kv.getQualifier()));
+//                System.out.println("value:" + Bytes.toString(kv.getValue()));
+//                System.out.println("Timestamp:" + kv.getTimestamp());
+//                System.out.println("-------------------------------------------");
+//            }
         } catch (Throwable e) {
             e.printStackTrace();
             Assert.fail();
