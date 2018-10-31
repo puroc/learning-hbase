@@ -1,7 +1,9 @@
 package com.example.hbase;
 
 import org.apache.hadoop.conf.Configuration;
-import org.apache.hadoop.hbase.*;
+import org.apache.hadoop.hbase.HBaseConfiguration;
+import org.apache.hadoop.hbase.KeyValue;
+import org.apache.hadoop.hbase.TableName;
 import org.apache.hadoop.hbase.client.*;
 import org.apache.hadoop.hbase.filter.*;
 import org.apache.hadoop.hbase.util.Bytes;
@@ -9,27 +11,27 @@ import org.junit.After;
 import org.junit.Assert;
 import org.junit.Before;
 import org.junit.Test;
-import sun.applet.Main;
 
-import java.io.*;
-import java.util.Date;
+import java.io.File;
+import java.io.FileWriter;
 import java.util.concurrent.atomic.AtomicLong;
 
 /**
  * Created by puroc on 2016/11/5.
  */
-public class DeviceDataSelector {
+public class FlowDataSelector {
 
     public static final String IP = "swpmcp1,swpmcp2,swpmcp4";
     public static final String PORT = "2181";
 //    public static final String FROM_TIME = "1524258045087";
 
     public static final String FROM_TIME = "0000000000000";
-    public static final String DEVICE_ID = "10042011620111073-";
+//    public static final String DEVICE_ID = "11000002100000001-";
+    public static final String DEVICE_ID = "11000102100000001-";
 
     private Configuration conf;
 
-    private String tableName = "iot_water_history";
+    private String tableName = "iot_flow_history";
 
     private String newLine = System.getProperty("line.separator");
 
@@ -81,7 +83,7 @@ public class DeviceDataSelector {
         Table table = null;
         try {
             table = connection.getTable(TableName.valueOf(tableName));
-            Get get = new Get(Bytes.toBytes("10042000620001001-1524258045087"));
+            Get get = new Get(Bytes.toBytes("11000002100000001-1529998107575"));
             Result result = table.get(get);
             for (KeyValue kv : result.list()) {
                 System.out.println("family:" + Bytes.toString(kv.getFamily()));
@@ -105,7 +107,7 @@ public class DeviceDataSelector {
 
     @Test
     public void testScanByRangeForR() throws Exception {
-        File file = new File("/Users/puroc/IdeaProjects/learning-hbase/src/test/java/com/example/hbase/readdata.csv");
+        File file = new File("/Users/puroc/IdeaProjects/learning-hbase/src/test/java/com/example/hbase/flowdata.csv");
         if (file.exists()) {
             file.delete();
         }
@@ -130,7 +132,7 @@ public class DeviceDataSelector {
 
             rs = table.getScanner(scan);
             for (Result r : rs) {
-                String value = new String(r.getValue(Bytes.toBytes("lz"), Bytes.toBytes("reading")));
+                String value = new String(r.getValue(Bytes.toBytes("lz"), Bytes.toBytes("accumulate")));
                 //value<0是告警
                 if (Integer.parseInt(value) < 0) {
                     continue;

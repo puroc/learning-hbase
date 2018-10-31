@@ -112,12 +112,8 @@ public class Utils {
 
 
     public static void main(String[] args) {
-        Date date1 =new Date(1524302501813L);
-        Date date2 =new Date(1535369400911L);
-        Date date3 =new Date(1524303341606L);
+        Date date1 =new Date(1529998107575L);
         System.out.println(date1.toString());
-        System.out.println(date2.toString());
-        System.out.println(date3.toString());
     }
 
 }
