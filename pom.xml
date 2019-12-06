@@ -14,32 +14,20 @@
             <version>1.2.3</version>
         </dependency>
 
-        <dependency>
-            <groupId>org.apache.phoenix</groupId>
-            <artifactId>phoenix-core</artifactId>
-            <version>4.13.1-HBase-1.2</version>
-        </dependency>
-
-        <!--<dependency>-->
-            <!--<groupId>org.apache.phoenix</groupId>-->
-            <!--<artifactId>phoenix-core</artifactId>-->
-            <!--<version>4.10.0-HBase-1.2</version>-->
-        <!--</dependency>-->
-
 
     </dependencies>
-    <repositories>
-        <repository>
-            <id>cloudera-releases</id>
-            <url>https://repository.cloudera.com/artifactory/cloudera-repos</url>
-            <releases>
-                <enabled>true</enabled>
-            </releases>
-            <snapshots>
-                <enabled>false</enabled>
-            </snapshots>
-        </repository>
-    </repositories>
+<!--    <repositories>-->
+<!--        <repository>-->
+<!--            <id>cloudera-releases</id>-->
+<!--            <url>https://repository.cloudera.com/artifactory/cloudera-repos</url>-->
+<!--            <releases>-->
+<!--                <enabled>true</enabled>-->
+<!--            </releases>-->
+<!--            <snapshots>-->
+<!--                <enabled>false</enabled>-->
+<!--            </snapshots>-->
+<!--        </repository>-->
+<!--    </repositories>-->
     <build>
         <plugins>
             <plugin>
